@@ -29,7 +29,7 @@ const ecsClient = new ECSClient({
 let client: ClickHouseClient | null = null;
 try {
     client = createClient({
-        host: process.env.CLICKHOUSE_HOST,
+        url: process.env.CLICKHOUSE_HOST,
         database: process.env.CLICKHOUSE_DATABASE,
         username: process.env.CLICKHOUSE_USER,
         password: process.env.CLICKHOUSE_PASSWORD
@@ -84,14 +84,31 @@ try {
         console.warn('⚠️  __dirname:', __dirname);
     } else {
         // Initialize Kafka client
+        const sslConfig: any = { rejectUnauthorized: true }; // Default to secure
+
+        if (kafkaCaCert) {
+            sslConfig.ca = [kafkaCaCert];
+        }
+
+        // Support client certificates if provided (mTLS)
+        if (process.env.KAFKA_CLIENT_CERT && process.env.KAFKA_CLIENT_KEY) {
+            sslConfig.cert = process.env.KAFKA_CLIENT_CERT;
+            sslConfig.key = process.env.KAFKA_CLIENT_KEY;
+        }
+
+        // Special handling for Aiven/custom CAs: connection error often means CA mismatch
+        // or system trust store issues.
+        // If user explicitly asks to ignore TLS errors (NOT RECOMMENDED FOR PROD), they can set NODE_TLS_REJECT_UNAUTHORIZED=0
+        // But we can also fallback if needed, though here we try to be strict as requested.
+
         kafka = new Kafka({
             clientId: `api-server`,
             brokers: [process.env.BROKER1],
             connectionTimeout: 30000,
             authenticationTimeout: 30000,
-            ssl: { ca: [kafkaCaCert] },
+            ssl: sslConfig,
             sasl: {
-                mechanism: 'plain',
+                mechanism: 'scram-sha-256',
                 username: process.env.SASL_USERNAME || '',
                 password: process.env.SASL_PASSWORD || ''
             }
@@ -99,6 +116,8 @@ try {
         consumer = kafka.consumer({ groupId: 'api-server-logs-consumer' });
         console.log('✅ Kafka client initialized');
         console.log(`📡 Kafka broker: ${process.env.BROKER1}`);
+        if (sslConfig.ca) console.log('🔒 SSL: CA certificate configured');
+        if (sslConfig.cert) console.log('🔒 SSL: Client certificate configured');
     }
 } catch (err) {
     console.error('⚠️  Failed to initialize Kafka:', err);
