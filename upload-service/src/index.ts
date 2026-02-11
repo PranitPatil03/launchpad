@@ -13,6 +13,13 @@ import { ECSClient, RunTaskCommand } from '@aws-sdk/client-ecs';
 
 dotenv.config();
 
+// Helper to handle multiline certs from env vars
+const formatCert = (cert: string) => {
+    if (!cert) return '';
+    // Replace explicit \n with actual newlines
+    return cert.replace(/\\n/g, '\n').replace(/\\r/g, '\r');
+}
+
 const port = parseInt(process.env.PORT || '3000', 10);
 const app = express();
 
@@ -53,7 +60,7 @@ try {
 
     // First, try to read from environment variable (for Railway deployment)
     if (process.env.KAFKA_CA_CERT) {
-        kafkaCaCert = process.env.KAFKA_CA_CERT;
+        kafkaCaCert = formatCert(process.env.KAFKA_CA_CERT);
         console.log('✅ Found Kafka CA certificate from KAFKA_CA_CERT environment variable');
     } else {
         // Try to read from file (for local development)
@@ -92,8 +99,8 @@ try {
 
         // Support client certificates if provided (mTLS)
         if (process.env.KAFKA_CLIENT_CERT && process.env.KAFKA_CLIENT_KEY) {
-            sslConfig.cert = process.env.KAFKA_CLIENT_CERT;
-            sslConfig.key = process.env.KAFKA_CLIENT_KEY;
+            sslConfig.cert = formatCert(process.env.KAFKA_CLIENT_CERT);
+            sslConfig.key = formatCert(process.env.KAFKA_CLIENT_KEY);
         }
 
         // Special handling for Aiven/custom CAs: connection error often means CA mismatch
