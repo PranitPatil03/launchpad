@@ -48,19 +48,37 @@ let kafka: Kafka | null = null;
 let consumer: ReturnType<Kafka['consumer']> | null = null;
 
 try {
-    // kafka.pem is in the root of upload-service, not in src/
-    const kafkaPemPath = path.join(__dirname, '..', 'kafka.pem');
+    // kafka.pem is in the root of upload-service (Railway sets root to upload-service/)
+    // Try multiple possible paths
+    const possiblePaths = [
+        path.join(__dirname, '..', 'kafka.pem'),  // If __dirname is /app/src
+        path.join(process.cwd(), 'kafka.pem'),     // If cwd is /app
+        '/app/kafka.pem',                          // Absolute path in Railway
+        'kafka.pem'                                // Relative to cwd
+    ];
     
-    if (!fs.existsSync(kafkaPemPath)) {
-        console.warn('⚠️  kafka.pem not found at:', kafkaPemPath);
+    let kafkaPemPath: string | null = null;
+    for (const testPath of possiblePaths) {
+        if (fs.existsSync(testPath)) {
+            kafkaPemPath = testPath;
+            console.log(`✅ Found kafka.pem at: ${kafkaPemPath}`);
+            break;
+        }
+    }
+    
+    if (!kafkaPemPath) {
+        console.warn('⚠️  kafka.pem not found in any of these locations:', possiblePaths);
         console.warn('⚠️  Kafka consumer will not be initialized');
+        console.warn('⚠️  Current working directory:', process.cwd());
+        console.warn('⚠️  __dirname:', __dirname);
     } else {
+        const kafkaPemContent = fs.readFileSync(kafkaPemPath, 'utf-8');
         kafka = new Kafka({
             clientId: `api-server`,
             brokers: [process.env.BROKER1 || ''],
             connectionTimeout: 30000,
             authenticationTimeout: 30000, 
-            ssl: { ca: [fs.readFileSync(kafkaPemPath, 'utf-8')] },
+            ssl: { ca: [kafkaPemContent] },
             sasl: { 
                 mechanism: 'plain', 
                 username: process.env.SASL_USERNAME || '', 
