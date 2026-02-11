@@ -108,18 +108,25 @@ try {
         // If user explicitly asks to ignore TLS errors (NOT RECOMMENDED FOR PROD), they can set NODE_TLS_REJECT_UNAUTHORIZED=0
         // But we can also fallback if needed, though here we try to be strict as requested.
 
-        kafka = new Kafka({
+        const kafkaConfig: any = {
             clientId: `api-server`,
             brokers: [process.env.BROKER1],
             connectionTimeout: 30000,
             authenticationTimeout: 30000,
             ssl: sslConfig,
-            sasl: {
+        };
+
+        // Only use SASL if we don't have client certificates (mTLS)
+        // If client certs are present, Aiven expects mTLS only, not SASL.
+        if (!sslConfig.cert && !sslConfig.key) {
+            kafkaConfig.sasl = {
                 mechanism: 'scram-sha-256',
                 username: process.env.SASL_USERNAME || '',
                 password: process.env.SASL_PASSWORD || ''
-            }
-        });
+            };
+        }
+
+        kafka = new Kafka(kafkaConfig);
         consumer = kafka.consumer({ groupId: 'api-server-logs-consumer' });
         console.log('✅ Kafka client initialized');
         console.log(`📡 Kafka broker: ${process.env.BROKER1}`);
