@@ -78,17 +78,30 @@ try {
 
 const config = { CLUSTER: process.env.CONFIG_CLUSTER, TASK: process.env.CONFIG_TASK }
 
-// CORS configuration - allow all origins for now (can restrict later)
-app.use(cors({
-  origin: true, // Allow all origins
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
-  exposedHeaders: ['Content-Length', 'Content-Type']
-}));
-
-// Handle preflight OPTIONS requests explicitly
-app.options('*', cors());
+// CORS configuration - manual handling for maximum compatibility
+app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    
+    // Allow all origins (you can restrict this later using ALLOWED_ORIGINS env var)
+    if (origin) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+    } else {
+        res.setHeader('Access-Control-Allow-Origin', '*');
+    }
+    
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, Access-Control-Request-Method, Access-Control-Request-Headers');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Type');
+    res.setHeader('Access-Control-Max-Age', '86400'); // 24 hours
+    
+    // Handle preflight OPTIONS request immediately
+    if (req.method === 'OPTIONS') {
+        return res.status(204).end();
+    }
+    
+    next();
+});
 
 app.use(express.json());
 
