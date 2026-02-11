@@ -48,37 +48,48 @@ let kafka: Kafka | null = null;
 let consumer: ReturnType<Kafka['consumer']> | null = null;
 
 try {
-    // kafka.pem is in the root of upload-service (Railway sets root to upload-service/)
-    // Try multiple possible paths
-    const possiblePaths = [
-        path.join(__dirname, '..', 'kafka.pem'),  // If __dirname is /app/src
-        path.join(process.cwd(), 'kafka.pem'),     // If cwd is /app
-        '/app/kafka.pem',                          // Absolute path in Railway
-        'kafka.pem'                                // Relative to cwd
-    ];
+    // Get Kafka CA certificate from file or environment variable
+    let kafkaCaCert: string | null = null;
     
-    let kafkaPemPath: string | null = null;
-    for (const testPath of possiblePaths) {
-        if (fs.existsSync(testPath)) {
-            kafkaPemPath = testPath;
-            console.log(`✅ Found kafka.pem at: ${kafkaPemPath}`);
-            break;
+    // First, try to read from environment variable (for Railway deployment)
+    if (process.env.KAFKA_CA_CERT) {
+        kafkaCaCert = process.env.KAFKA_CA_CERT;
+        console.log('✅ Found Kafka CA certificate from KAFKA_CA_CERT environment variable');
+    } else {
+        // Try to read from file (for local development)
+        const possiblePaths = [
+            path.join(__dirname, '..', 'kafka.pem'),  // If __dirname is /app/src
+            path.join(process.cwd(), 'kafka.pem'),     // If cwd is /app
+            '/app/kafka.pem',                          // Absolute path in Railway
+            'kafka.pem'                                // Relative to cwd
+        ];
+        
+        for (const testPath of possiblePaths) {
+            if (fs.existsSync(testPath)) {
+                kafkaCaCert = fs.readFileSync(testPath, 'utf-8');
+                console.log(`✅ Found kafka.pem at: ${testPath}`);
+                break;
+            }
         }
     }
     
-    if (!kafkaPemPath) {
-        console.warn('⚠️  kafka.pem not found in any of these locations:', possiblePaths);
+    // Validate Kafka configuration
+    if (!process.env.BROKER1) {
+        console.warn('⚠️  BROKER1 environment variable not set');
+        console.warn('⚠️  Kafka consumer will not be initialized');
+    } else if (!kafkaCaCert) {
+        console.warn('⚠️  Kafka CA certificate not found (neither KAFKA_CA_CERT env var nor kafka.pem file)');
         console.warn('⚠️  Kafka consumer will not be initialized');
         console.warn('⚠️  Current working directory:', process.cwd());
         console.warn('⚠️  __dirname:', __dirname);
     } else {
-        const kafkaPemContent = fs.readFileSync(kafkaPemPath, 'utf-8');
+        // Initialize Kafka client
         kafka = new Kafka({
             clientId: `api-server`,
-            brokers: [process.env.BROKER1 || ''],
+            brokers: [process.env.BROKER1],
             connectionTimeout: 30000,
             authenticationTimeout: 30000, 
-            ssl: { ca: [kafkaPemContent] },
+            ssl: { ca: [kafkaCaCert] },
             sasl: { 
                 mechanism: 'plain', 
                 username: process.env.SASL_USERNAME || '', 
@@ -87,6 +98,7 @@ try {
         });
         consumer = kafka.consumer({ groupId: 'api-server-logs-consumer' });
         console.log('✅ Kafka client initialized');
+        console.log(`📡 Kafka broker: ${process.env.BROKER1}`);
     }
 } catch (err) {
     console.error('⚠️  Failed to initialize Kafka:', err);
