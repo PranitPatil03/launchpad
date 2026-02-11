@@ -288,13 +288,19 @@ async function initkafkaConsumer() {
                         }
                         
                         resolveOffset(message.offset);
-                        await commitOffsetsIfNecessary(message.offset);
+                        const offsets = {
+                            topics: [{ topic: batch.topic, partitions: [{ partition: batch.partition, offset: message.offset }] }]
+                        };
+                        await commitOffsetsIfNecessary(offsets);
                         await heartbeat();
                     } catch (err) {
                         console.error('Error processing Kafka message:', err);
                         // Still resolve offset to prevent reprocessing
                         resolveOffset(message.offset);
-                        await commitOffsetsIfNecessary(message.offset);
+                        const offsets = {
+                            topics: [{ topic: batch.topic, partitions: [{ partition: batch.partition, offset: message.offset }] }]
+                        };
+                        await commitOffsetsIfNecessary(offsets);
                         await heartbeat();
                     }
                 }

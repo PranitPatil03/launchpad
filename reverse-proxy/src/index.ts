@@ -62,10 +62,11 @@ proxy.on('proxyReq', (proxyReq, req, res) => {
     if (url === '/') proxyReq.path += 'index.html';
 });
 
-proxy.on('error', (err, req, res) => {
+proxy.on('error', (err: Error, _req: import('http').IncomingMessage, res: unknown) => {
     console.error('Proxy error:', err);
-    if (!res.headersSent) {
-        res.status(500).json({ error: 'Proxy error', message: err.message });
+    const response = res as express.Response;
+    if (response && typeof response.headersSent !== 'undefined' && !response.headersSent) {
+        response.status(500).json({ error: 'Proxy error', message: err.message });
     }
 });
 
