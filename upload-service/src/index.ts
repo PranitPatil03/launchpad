@@ -36,8 +36,38 @@ const consumer = kafka.consumer({ groupId: 'api-server-logs-consumer' })
 
 const config = { CLUSTER: process.env.CONFIG_CLUSTER, TASK: process.env.CONFIG_TASK }
 
-app.use(cors())
+// CORS configuration - allow frontend origin
+const allowedOrigins = process.env.ALLOWED_ORIGINS 
+  ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
+  : ['*']; // Default to allow all if not specified
+
+app.use(cors({
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps, Postman, curl)
+    if (!origin) return callback(null, true);
+    
+    // If '*' is in allowed origins, allow all
+    if (allowedOrigins.includes('*')) return callback(null, true);
+    
+    // Check if origin is in allowed list
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      // For development, allow all origins
+      callback(null, true);
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  exposedHeaders: ['Content-Length', 'X-Foo', 'X-Bar']
+}));
 app.use(express.json());
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', service: 'upload-service' });
+});
 
 // io.on('connection', (socket: any) => {
 //     socket.on('subscribe', (channel: string) => {
