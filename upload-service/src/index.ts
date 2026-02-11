@@ -106,7 +106,12 @@ try {
 }
 
 
-const config = { CLUSTER: process.env.CONFIG_CLUSTER, TASK: process.env.CONFIG_TASK }
+// ECS config: container name must match your task definition exactly
+const config = { 
+    CLUSTER: process.env.CONFIG_CLUSTER, 
+    TASK: process.env.CONFIG_TASK,
+    CONTAINER_NAME: process.env.CONFIG_CONTAINER_NAME || 'builder-image'
+}
 
 // CORS configuration - manual handling for maximum compatibility
 app.use((req, res, next) => {
@@ -219,7 +224,7 @@ app.post('/deploy', async (req, res) => {
             overrides: {
                 containerOverrides: [
                     {
-                        name: 'builder-image',
+                        name: config.CONTAINER_NAME,
                         environment: [
                             { name: 'GIT_REPOSITORY__URL', value: project.gitURL },
                             { name: 'PROJECT_ID', value: projectId },

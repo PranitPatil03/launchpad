@@ -76,10 +76,12 @@ export default function Home() {
       if (projectData?.data?.project) {
         const { id, subDomain } = projectData.data.project;
         setProjectId(id);
-        // Construct preview URL: https://<subdomain>.<reverse-proxy-domain>
-        const previewUrl = previewBaseUrl.includes('*') 
-          ? previewBaseUrl.replace('*', subDomain)
-          : `https://${subDomain}.${previewBaseUrl.replace('https://', '').replace('http://', '')}`;
+        // Path-based (no domain): https://reverse-proxy.up.railway.app/preview/abundant-old-father
+        // Subdomain-based: https://*.domain.com -> https://abundant-old-father.domain.com
+        const base = previewBaseUrl.replace(/\/$/, '');
+        const previewUrl = base.includes('*')
+          ? base.replace('*', subDomain)
+          : `${base}/preview/${subDomain}`;
         setDeployPreviewURL(previewUrl);
 
         // Start deployment

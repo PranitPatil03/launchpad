@@ -28,6 +28,33 @@ app.use(cors({
 
 app.use(express.json());
 
+// Path-based preview (no custom domain needed): /preview/:subDomain and /preview/:subDomain/*
+// Example: https://your-reverse-proxy.up.railway.app/preview/abundant-old-father
+app.use('/preview/:subDomain', async (req, res) => {
+    try {
+        const subDomain = req.params.subDomain;
+        if (!subDomain) {
+            return res.status(400).json({ error: 'Subdomain required' });
+        }
+        const projects = await prisma.project.findMany({ where: { subDomain } });
+        if (!projects || projects.length === 0) {
+            return res.status(404).json({ error: 'Project not found for: ' + subDomain });
+        }
+        if (!BASE_URL) {
+            return res.status(500).json({ error: 'BASE_URL not configured' });
+        }
+        const target = `${BASE_URL}${projects[0].id}`;
+        // req.url is the path after the mount (e.g. '' or '/' or '/static/js/main.js')
+        req.url = req.url || '/';
+        console.log('Proxying /preview/' + subDomain + ' to:', target, 'path:', req.url);
+        return proxy.web(req, res, { target, changeOrigin: true });
+    } catch (error) {
+        console.error('Error in reverse proxy (path-based):', error);
+        return res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Subdomain-based routing (when using a custom domain with wildcard DNS)
 app.use(async (req, res) => {
     try {
         const hostname = req.hostname;
