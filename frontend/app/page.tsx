@@ -41,7 +41,8 @@ export default function Home() {
 
   const pollDeploymentLogs = useCallback(async (deployId: string) => {
     try {
-      const { data } = await axios.get(`https://backend1.jayrajkl.com/logs/${deployId}`);
+      const uploadServiceUrl = process.env.NEXT_PUBLIC_UPLOAD_SERVICE_URL || '';
+      const { data } = await axios.get(`${uploadServiceUrl}/logs/${deployId}`);
       if (data && data.logs) {
         const newLogs: string[] = (data as DeploymentLogs).logs.map((log: LogEntry): string => log.log);
         setLogs(newLogs);
@@ -64,7 +65,10 @@ export default function Home() {
       setLogs([]);
 
       // Create project
-      const { data: projectData } = await axios.post(`https://backend1.jayrajkl.com/project`, {
+      const uploadServiceUrl = process.env.NEXT_PUBLIC_UPLOAD_SERVICE_URL || '';
+      const previewBaseUrl = process.env.NEXT_PUBLIC_PREVIEW_BASE_URL || '';
+      
+      const { data: projectData } = await axios.post(`${uploadServiceUrl}/project`, {
         gitURL: repoURL,
         name: "",
       });
@@ -72,10 +76,14 @@ export default function Home() {
       if (projectData?.data?.project) {
         const { id, subDomain } = projectData.data.project;
         setProjectId(id);
-        setDeployPreviewURL(`http://${subDomain}.backend2.jayrajkl.com/`);
+        // Construct preview URL: https://<subdomain>.<reverse-proxy-domain>
+        const previewUrl = previewBaseUrl.includes('*') 
+          ? previewBaseUrl.replace('*', subDomain)
+          : `https://${subDomain}.${previewBaseUrl.replace('https://', '').replace('http://', '')}`;
+        setDeployPreviewURL(previewUrl);
 
         // Start deployment
-        const { data: deployData } = await axios.post(`https://backend1.jayrajkl.com/deploy`, {
+        const { data: deployData } = await axios.post(`${uploadServiceUrl}/deploy`, {
           projectId: id,
         });
 
