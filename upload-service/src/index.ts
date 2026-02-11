@@ -17,22 +17,22 @@ const port = parseInt(process.env.PORT || '3000', 10);
 const app = express();
 
 // Initialize AWS ECS Client
-const ecsClient = new ECSClient({ 
-    region: process.env.REGION || 'ap-south-1', 
-    credentials: { 
-        accessKeyId: process.env.CREDENTIALS_ACCESS_KEY_ID || '',  
-        secretAccessKey: process.env.CREDENTIALS_SECRET_ACCESS_KEY || ''  
-    } 
+const ecsClient = new ECSClient({
+    region: process.env.REGION || 'ap-south-1',
+    credentials: {
+        accessKeyId: process.env.CREDENTIALS_ACCESS_KEY_ID || '',
+        secretAccessKey: process.env.CREDENTIALS_SECRET_ACCESS_KEY || ''
+    }
 });
 
 // Initialize ClickHouse client with error handling
 let client: ClickHouseClient | null = null;
 try {
-    client = createClient({ 
-        host: process.env.CLICKHOUSE_HOST, 
-        database: process.env.CLICKHOUSE_DATABASE, 
-        username: process.env.CLICKHOUSE_USER, 
-        password: process.env.CLICKHOUSE_PASSWORD 
+    client = createClient({
+        host: process.env.CLICKHOUSE_HOST,
+        database: process.env.CLICKHOUSE_DATABASE,
+        username: process.env.CLICKHOUSE_USER,
+        password: process.env.CLICKHOUSE_PASSWORD
     });
     console.log('✅ ClickHouse client initialized');
 } catch (err) {
@@ -50,7 +50,7 @@ let consumer: ReturnType<Kafka['consumer']> | null = null;
 try {
     // Get Kafka CA certificate from file or environment variable
     let kafkaCaCert: string | null = null;
-    
+
     // First, try to read from environment variable (for Railway deployment)
     if (process.env.KAFKA_CA_CERT) {
         kafkaCaCert = process.env.KAFKA_CA_CERT;
@@ -63,7 +63,7 @@ try {
             '/app/kafka.pem',                          // Absolute path in Railway
             'kafka.pem'                                // Relative to cwd
         ];
-        
+
         for (const testPath of possiblePaths) {
             if (fs.existsSync(testPath)) {
                 kafkaCaCert = fs.readFileSync(testPath, 'utf-8');
@@ -72,7 +72,7 @@ try {
             }
         }
     }
-    
+
     // Validate Kafka configuration
     if (!process.env.BROKER1) {
         console.warn('⚠️  BROKER1 environment variable not set');
@@ -88,12 +88,12 @@ try {
             clientId: `api-server`,
             brokers: [process.env.BROKER1],
             connectionTimeout: 30000,
-            authenticationTimeout: 30000, 
+            authenticationTimeout: 30000,
             ssl: { ca: [kafkaCaCert] },
-            sasl: { 
-                mechanism: 'plain', 
-                username: process.env.SASL_USERNAME || '', 
-                password: process.env.SASL_PASSWORD || '' 
+            sasl: {
+                mechanism: 'plain',
+                username: process.env.SASL_USERNAME || '',
+                password: process.env.SASL_PASSWORD || ''
             }
         });
         consumer = kafka.consumer({ groupId: 'api-server-logs-consumer' });
@@ -107,8 +107,8 @@ try {
 
 
 // ECS config: container name must match your task definition exactly
-const config = { 
-    CLUSTER: process.env.CONFIG_CLUSTER, 
+const config = {
+    CLUSTER: process.env.CONFIG_CLUSTER,
     TASK: process.env.CONFIG_TASK,
     CONTAINER_NAME: process.env.CONFIG_CONTAINER_NAME || 'builder-image'
 }
@@ -116,25 +116,25 @@ const config = {
 // CORS configuration - manual handling for maximum compatibility
 app.use((req, res, next) => {
     const origin = req.headers.origin;
-    
+
     // Allow all origins (you can restrict this later using ALLOWED_ORIGINS env var)
     if (origin) {
         res.setHeader('Access-Control-Allow-Origin', origin);
     } else {
         res.setHeader('Access-Control-Allow-Origin', '*');
     }
-    
+
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, Access-Control-Request-Method, Access-Control-Request-Headers');
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Type');
     res.setHeader('Access-Control-Max-Age', '86400'); // 24 hours
-    
+
     // Handle preflight OPTIONS request immediately
     if (req.method === 'OPTIONS') {
         return res.status(204).end();
     }
-    
+
     next();
 });
 
@@ -142,12 +142,12 @@ app.use(express.json());
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
-    service: 'upload-service',
-    kafka: kafka ? 'connected' : 'not configured',
-    clickhouse: client ? 'connected' : 'not configured'
-  });
+    res.json({
+        status: 'ok',
+        service: 'upload-service',
+        kafka: kafka ? 'connected' : 'not configured',
+        clickhouse: client ? 'connected' : 'not configured'
+    });
 });
 
 // Create a new project
@@ -161,12 +161,12 @@ app.post('/project', async (req, res) => {
         }
 
         const { name, gitURL } = safeParseResult.data;
-        const project = await prisma.project.create({ 
-            data: { 
-                name, 
-                gitURL, 
-                subDomain: generateSlug() 
-            } 
+        const project = await prisma.project.create({
+            data: {
+                name,
+                gitURL,
+                subDomain: generateSlug()
+            }
         });
 
         return res.json({ status: 'success', data: { project } });
@@ -179,23 +179,23 @@ app.post('/project', async (req, res) => {
 app.post('/deploy', async (req, res) => {
     try {
         const { projectId } = req.body;
-        
+
         if (!projectId) {
             return res.status(400).json({ error: 'projectId is required' });
         }
 
         const project = await prisma.project.findUnique({ where: { id: projectId } });
-        
+
         if (!project) {
             return res.status(404).json({ error: 'Project not found' });
         }
 
         // Create deployment record
-        const deployment = await prisma.deployement.create({ 
-            data: { 
-                project: { connect: { id: projectId } }, 
-                status: 'QUEUED' 
-            } 
+        const deployment = await prisma.deployement.create({
+            data: {
+                project: { connect: { id: projectId } },
+                status: 'QUEUED'
+            }
         });
 
         // Validate ECS config
@@ -214,8 +214,8 @@ app.post('/deploy', async (req, res) => {
                 awsvpcConfiguration: {
                     assignPublicIp: 'ENABLED',
                     subnets: [
-                        process.env.AWSCONFIG_SUBNETS1 || '', 
-                        process.env.AWSCONFIG_SUBNETS2 || '', 
+                        process.env.AWSCONFIG_SUBNETS1 || '',
+                        process.env.AWSCONFIG_SUBNETS2 || '',
                         process.env.AWSCONFIG_SUBNETS3 || ''
                     ].filter(Boolean), // Remove empty strings
                     securityGroups: [process.env.AWSCONFIG_SECURITYGROUPS || ''].filter(Boolean),
@@ -237,7 +237,7 @@ app.post('/deploy', async (req, res) => {
 
         await ecsClient.send(command);
         console.log(`✅ ECS task queued for deployment ${deployment.id}`);
-        
+
         return res.json({ status: 'queued', data: { deploymentId: deployment.id } });
     } catch (error) {
         console.error('Error deploying:', error);
@@ -280,20 +280,20 @@ async function initkafkaConsumer() {
                 const messages = batch.messages;
                 for (const message of messages) {
                     if (!message.value) continue;
-                    
+
                     try {
                         const stringMessage = message.value.toString();
                         const { DEPLOYEMENT_ID, log } = JSON.parse(stringMessage);
-                        
+
                         // Insert log into ClickHouse if available
                         if (client) {
                             try {
                                 await client.insert({
                                     table: 'log_events',
-                                    values: [{ 
-                                        event_id: uuidv4(), 
-                                        deployment_id: DEPLOYEMENT_ID, 
-                                        log 
+                                    values: [{
+                                        event_id: uuidv4(),
+                                        deployment_id: DEPLOYEMENT_ID,
+                                        log
                                     }],
                                     format: 'JSONEachRow'
                                 });
@@ -303,7 +303,7 @@ async function initkafkaConsumer() {
                         } else {
                             console.log(`[${DEPLOYEMENT_ID}] ${log}`);
                         }
-                        
+
                         resolveOffset(message.offset);
                         const offsets = {
                             topics: [{ topic: batch.topic, partitions: [{ partition: batch.partition, offset: message.offset }] }]
@@ -323,11 +323,30 @@ async function initkafkaConsumer() {
                 }
             }
         });
-        
+
         console.log('✅ Kafka consumer connected and subscribed to container-logs');
     } catch (err) {
         console.error('❌ Failed to initialize Kafka consumer:', err);
         console.log('⚠️  Service will continue without Kafka consumer (logs may not be stored)');
+    }
+}
+
+async function initClickHouseSchema() {
+    if (!client) return;
+    try {
+        await client.query({
+            query: `CREATE TABLE IF NOT EXISTS log_events (
+                event_id String,
+                deployment_id String,
+                log String,
+                timestamp DateTime DEFAULT now()
+            )
+            ENGINE = MergeTree()
+            ORDER BY (deployment_id, timestamp)`
+        });
+        console.log('✅ ClickHouse table "log_events" checked/created');
+    } catch (err) {
+        console.error('❌ Failed to create/check ClickHouse table:', err);
     }
 }
 
@@ -337,7 +356,10 @@ app.listen(port, '0.0.0.0', () => {
     console.log(`⚡️[server-upload-service]: Server is running at http://0.0.0.0:${port}`);
     console.log(`📡 Listening on port ${port}`);
     console.log(`🔗 Health check: http://0.0.0.0:${port}/health`);
-    
+
+    // Initialize ClickHouse Schema
+    initClickHouseSchema();
+
     // Initialize Kafka consumer after server starts (non-blocking)
     if (consumer) {
         initkafkaConsumer().catch(err => {
