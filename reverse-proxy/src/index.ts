@@ -117,4 +117,13 @@ app.listen(port, '0.0.0.0', () => {
     console.log(`🔗 Health check: http://0.0.0.0:${port}/health`);
 });
 
+process.on('uncaughtException', (err) => {
+    console.error('UNCAUGHT EXCEPTION:', err);
+    // Keep running if possible, or exit gracefully
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('UNHANDLED REJECTION:', reason);
+});
+
 export default app;
