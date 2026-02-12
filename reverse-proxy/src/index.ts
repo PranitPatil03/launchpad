@@ -28,29 +28,58 @@ app.use(cors({
 
 app.use(express.json());
 
+// Health check endpoint (MUST be before catch-all routes)
+app.get('/health', (req, res) => {
+    console.log('Health check request received');
+    res.json({ 
+        status: 'ok', 
+        service: 'reverse-proxy', 
+        port,
+        timestamp: new Date().toISOString() 
+    });
+});
+
+// Root endpoint
+app.get('/', (req, res) => {
+    res.json({ 
+        status: 'ok',
+        service: 'reverse-proxy',
+        message: 'Reverse proxy service is running',
+        endpoints: {
+            health: '/health',
+            preview: '/preview/:subdomain/*'
+        }
+    });
+});
+
 // Path-based preview (no custom domain needed): /preview/:subDomain and /preview/:subDomain/*
 // Example: https://your-reverse-proxy.up.railway.app/preview/abundant-old-father
 app.use('/preview/:subDomain', async (req, res) => {
     try {
         const subDomain = req.params.subDomain;
+        console.log('📱 Preview request for subdomain:', subDomain, 'path:', req.url);
+        
         if (!subDomain) {
+            console.warn('⚠️  No subdomain provided');
             return res.status(400).json({ error: 'Subdomain required' });
         }
         const projects = await prisma.project.findMany({ where: { subDomain } });
         if (!projects || projects.length === 0) {
+            console.warn('⚠️  Project not found for:', subDomain);
             return res.status(404).json({ error: 'Project not found for: ' + subDomain });
         }
         if (!BASE_URL) {
+            console.error('❌ BASE_URL not configured');
             return res.status(500).json({ error: 'BASE_URL not configured' });
         }
         const target = `${BASE_URL}${projects[0].id}`;
         // req.url is the path after the mount (e.g. '' or '/' or '/static/js/main.js')
         req.url = req.url || '/';
-        console.log('Proxying /preview/' + subDomain + ' to:', target, 'path:', req.url);
+        console.log('✅ Proxying /preview/' + subDomain + ' to:', target, 'path:', req.url);
         return proxy.web(req, res, { target, changeOrigin: true });
     } catch (error) {
-        console.error('Error in reverse proxy (path-based):', error);
-        return res.status(500).json({ error: 'Internal server error' });
+        console.error('❌ Error in reverse proxy (path-based):', error);
+        return res.status(500).json({ error: 'Internal server error', message: error instanceof Error ? error.message : 'Unknown error' });
     }
 });
 
@@ -58,18 +87,21 @@ app.use('/preview/:subDomain', async (req, res) => {
 app.use(async (req, res) => {
     try {
         const hostname = req.hostname;
-        console.log('hostname', hostname);
+        console.log('🌐 Incoming request - hostname:', hostname, 'path:', req.url);
+        
         const subdomain = hostname.split('.')[0];
-        console.log('subdomain', subdomain);
+        console.log('📋 Extracted subdomain:', subdomain);
 
         // Find project by subdomain
         const projects = await prisma.project.findMany({ where: { subDomain: subdomain } });
 
         if (!projects || projects.length === 0) {
+            console.warn('⚠️  Project not found for subdomain:', subdomain);
             return res.status(404).json({ error: 'Project not found for subdomain: ' + subdomain });
         }
 
         if (!BASE_URL) {
+            console.error('❌ BASE_URL not configured');
             return res.status(500).json({ error: 'BASE_URL not configured' });
         }
 
@@ -81,12 +113,12 @@ app.use(async (req, res) => {
             req.url = '/index.html';
         }
 
-        console.log(`Proxying ${hostname}${req.url} -> ${resolvesTo}${req.url}`);
+        console.log(`✅ Proxying ${hostname}${req.url} -> ${resolvesTo}${req.url}`);
 
         return proxy.web(req, res, { target: resolvesTo, changeOrigin: true });
     } catch (error) {
-        console.error('Error in reverse proxy:', error);
-        return res.status(500).json({ error: 'Internal server error' });
+        console.error('❌ Error in reverse proxy:', error);
+        return res.status(500).json({ error: 'Internal server error', message: error instanceof Error ? error.message : 'Unknown error' });
     }
 });
 
@@ -105,16 +137,13 @@ proxy.on('error', (err: Error, _req: import('http').IncomingMessage, res: unknow
     }
 });
 
-// Health check endpoint
-app.get('/health', (req, res) => {
-    res.json({ status: 'ok', service: 'reverse-proxy', port });
-});
-
-// Bind to 0.0.0.0 so Railway can reach it
-app.listen(port, '0.0.0.0', () => {
+// Bind to 0.0.0.0 explicitly (Required for Railway)
+const server = app.listen(port, '0.0.0.0', () => {
+    const address = server.address();
     console.log(`⚡️[server-reverse-proxy]: Server is running at http://0.0.0.0:${port}`);
     console.log(`📡 Listening on port ${port}`);
     console.log(`🔗 Health check: http://0.0.0.0:${port}/health`);
+    console.log('Server address:', address);
 });
 
 process.on('uncaughtException', (err) => {
