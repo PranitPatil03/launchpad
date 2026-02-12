@@ -93,6 +93,44 @@ async function main() {
         await publishLog('Detected npm project');
     }
 
+    // Force Next.js Static Export
+    // Check for next.config.ts first (TypeScript)
+    const nextConfigTsPath = path.join(outDir, 'next.config.ts');
+    if (fs.existsSync(nextConfigTsPath)) {
+        await publishLog('Detected Next.js (TS), enforcing static export...');
+        let method = 'append'; // Default to append if we can't parse easily
+        let configContent = fs.readFileSync(nextConfigTsPath, 'utf8');
+
+        // Simple regex to find if output: 'export' is missing
+        if (!configContent.includes("output: 'export'")) {
+            // If it has 'const nextConfig = {', we try to inject it
+            if (configContent.includes('const nextConfig: NextConfig = {')) {
+                configContent = configContent.replace('const nextConfig: NextConfig = {', "const nextConfig: NextConfig = {\n  output: 'export',");
+            } else if (configContent.includes('const nextConfig = {')) {
+                configContent = configContent.replace('const nextConfig = {', "const nextConfig = {\n  output: 'export',");
+            } else {
+                // Fallback: Just append it to the end (might break if strictly typed but often works for simple configs)
+                // Actually, appending usually is safest if we can't parse. But let's try safely.
+                // If we can't safely inject, we might just warn.
+                await publishLog('WARNING: Could not automatically inject "output: export" into next.config.ts. Please ensure it is set manually.');
+            }
+            fs.writeFileSync(nextConfigTsPath, configContent);
+        }
+    } else {
+        // Check for next.config.js (JavaScript)
+        const nextConfigJsPath = path.join(outDir, 'next.config.js');
+        if (fs.existsSync(nextConfigJsPath)) {
+            await publishLog('Detected Next.js (JS), enforcing static export...');
+            let configContent = fs.readFileSync(nextConfigJsPath, 'utf8');
+            if (!configContent.includes("output: 'export'") && !configContent.includes('output: "export"')) {
+                if (configContent.includes('nextConfig = {')) {
+                    configContent = configContent.replace('nextConfig = {', "nextConfig = {\n  output: 'export',");
+                    fs.writeFileSync(nextConfigJsPath, configContent);
+                }
+            }
+        }
+    }
+
     const buildProcess = exec(`cd ${outDir} && ${installCmd} && ${buildCmd}`);
 
     buildProcess.stdout.on('data', (data) => console.log(data) || publishLog(data.toString()));
@@ -105,24 +143,27 @@ async function main() {
             process.exit(code);
         }
         await publishLog(`Build Complete`)
-        await publishLog(`Build Complete`)
-        let distDir = path.join(__dirname, 'output', 'dist');
 
-        // Check for different build output directories
+        // Check for static export output (out), then others
+        let distDir = path.join(__dirname, 'output', 'out'); // Next.js Static Export default
+
+        if (!fs.existsSync(distDir)) {
+            distDir = path.join(__dirname, 'output', 'dist'); // Vite
+        }
+        if (!fs.existsSync(distDir)) {
+            distDir = path.join(__dirname, 'output', 'build'); // CRA
+        }
+        // Fallback to .next ONLY if we failed to export (but S3 might not serve it correctly without export)
         if (!fs.existsSync(distDir)) {
             const nextDir = path.join(__dirname, 'output', '.next');
             if (fs.existsSync(nextDir)) {
+                await publishLog('WARNING: Using .next folder. This may not work on S3/Vercel-Clone without "output: export"');
                 distDir = nextDir;
-            } else {
-                const buildDir = path.join(__dirname, 'output', 'build');
-                if (fs.existsSync(buildDir)) {
-                    distDir = buildDir;
-                }
             }
         }
 
         if (!fs.existsSync(distDir)) {
-            await publishLog(`ERROR: Could not find build output directory (checked dist, .next, build)`);
+            await publishLog(`ERROR: Could not find build output directory (checked out, dist, build, .next)`);
             console.error('Build output not found');
             process.exit(1);
         }

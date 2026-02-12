@@ -73,10 +73,16 @@ app.use(async (req, res) => {
             return res.status(500).json({ error: 'BASE_URL not configured' });
         }
 
-        // Construct target URL: BASE_URL + projectId
-        const resolvesTo = `${BASE_URL}${projects[0].id}`;
-        console.log('Proxying to:', resolvesTo);
-        
+        const project = projects[0];
+        const resolvesTo = `${BASE_URL}${project.id}`;
+
+        // If the request is for root '/', append index.html
+        if (req.url === '/') {
+            req.url = '/index.html';
+        }
+
+        console.log(`Proxying ${hostname}${req.url} -> ${resolvesTo}${req.url}`);
+
         return proxy.web(req, res, { target: resolvesTo, changeOrigin: true });
     } catch (error) {
         console.error('Error in reverse proxy:', error);
@@ -84,9 +90,11 @@ app.use(async (req, res) => {
     }
 });
 
-proxy.on('proxyReq', (proxyReq, req, res) => {
-    const url = req.url;
-    if (url === '/') proxyReq.path += 'index.html';
+proxy.on('proxyReq', (proxyReq, req, res, options) => {
+    // Modify the path in the outgoing request to S3 if needed
+    if (req.url === '/') {
+        proxyReq.path += 'index.html';
+    }
 });
 
 proxy.on('error', (err: Error, _req: import('http').IncomingMessage, res: unknown) => {
