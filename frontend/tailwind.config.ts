@@ -8,8 +8,11 @@ export default {
     "./app/**/*.{js,ts,jsx,tsx,mdx}",
   ],
   theme: {
-  	extend: {
-  		colors: {
+extend: {
+   		fontFamily: {
+   			'bricolage-grotesque': ['var(--font-bricolage-grotesque)', 'sans-serif'],
+   		},
+   		colors: {
   			background: 'hsl(var(--background))',
   			foreground: 'hsl(var(--foreground))',
   			card: {

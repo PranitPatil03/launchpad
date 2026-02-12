@@ -10,6 +10,7 @@ import { ClickHouseClient, createClient } from "@clickhouse/client";
 import { PrismaClient } from "@prisma/client";
 import { generateSlug } from 'random-word-slugs';
 import { ECSClient, RunTaskCommand } from '@aws-sdk/client-ecs';
+import { handler as authHandler } from './auth-handler';
 
 dotenv.config();
 
@@ -173,6 +174,9 @@ app.use((req, res, next) => {
 
 app.use(express.json());
 
+// Auth routes
+app.all('/api/auth/*', authHandler);
+
 // Health check endpoint
 app.get('/health', (req, res) => {
     res.json({
@@ -186,19 +190,24 @@ app.get('/health', (req, res) => {
 // Create a new project
 app.post('/project', async (req, res) => {
     try {
-        const schema = z.object({ name: z.string(), gitURL: z.string().url() });
+        const schema = z.object({ 
+            name: z.string().optional().default(""), 
+            gitURL: z.string().url(),
+            userId: z.string()
+        });
         const safeParseResult = schema.safeParse(req.body);
 
         if (!safeParseResult.success) {
             return res.status(400).json({ error: 'Invalid request body', details: safeParseResult.error.errors });
         }
 
-        const { name, gitURL } = safeParseResult.data;
+        const { name, gitURL, userId } = safeParseResult.data;
         const project = await prisma.project.create({
             data: {
                 name,
                 gitURL,
-                subDomain: generateSlug()
+                subDomain: generateSlug(),
+                userId
             }
         });
 
