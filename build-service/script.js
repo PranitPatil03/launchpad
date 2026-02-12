@@ -76,14 +76,57 @@ async function main() {
     await producer.connect()
     await publishLog('Build Started...')
     const outDir = path.join(__dirname, 'output');
-    const buildProcess = exec(`cd ${outDir} && npm install && npm run build`);
+
+    // Detect package manager
+    let installCmd = 'npm install';
+    let buildCmd = 'npm run build';
+
+    if (fs.existsSync(path.join(outDir, 'pnpm-lock.yaml'))) {
+        installCmd = 'pnpm install';
+        buildCmd = 'pnpm run build';
+        await publishLog('Detected pnpm project');
+    } else if (fs.existsSync(path.join(outDir, 'yarn.lock'))) {
+        installCmd = 'yarn install';
+        buildCmd = 'yarn run build';
+        await publishLog('Detected yarn project');
+    } else {
+        await publishLog('Detected npm project');
+    }
+
+    const buildProcess = exec(`cd ${outDir} && ${installCmd} && ${buildCmd}`);
 
     buildProcess.stdout.on('data', (data) => console.log(data) || publishLog(data.toString()));
     buildProcess.stderr.on('data', (data) => console.error(data) || publishLog(data.toString()));
 
-    buildProcess.on('close', async function () {
+    buildProcess.on('close', async function (code) {
+        if (code !== 0) {
+            await publishLog(`Build Failed with exit code ${code}`);
+            console.error(`Build failed with exit code ${code}`);
+            process.exit(code);
+        }
         await publishLog(`Build Complete`)
-        const distDir = path.join(__dirname, 'output', 'dist');
+        await publishLog(`Build Complete`)
+        let distDir = path.join(__dirname, 'output', 'dist');
+
+        // Check for different build output directories
+        if (!fs.existsSync(distDir)) {
+            const nextDir = path.join(__dirname, 'output', '.next');
+            if (fs.existsSync(nextDir)) {
+                distDir = nextDir;
+            } else {
+                const buildDir = path.join(__dirname, 'output', 'build');
+                if (fs.existsSync(buildDir)) {
+                    distDir = buildDir;
+                }
+            }
+        }
+
+        if (!fs.existsSync(distDir)) {
+            await publishLog(`ERROR: Could not find build output directory (checked dist, .next, build)`);
+            console.error('Build output not found');
+            process.exit(1);
+        }
+
         const distDirContent = fs.readdirSync(path.resolve(distDir), { recursive: true });
 
         await publishLog(`Uploading service to S3...`)
