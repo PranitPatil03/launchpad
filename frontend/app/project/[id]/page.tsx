@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { FolderGit2, Globe, Terminal, RefreshCw, ExternalLink } from "lucide-react";
 import { Fira_Code } from 'next/font/google';
 import { Navbar } from "@/components/navbar";
+import { useSearchParams } from "next/navigation";
 
 const firaCode = Fira_Code({ subsets: ["latin"] });
 
@@ -36,6 +37,8 @@ interface Project {
 
 export default function ProjectPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = use(params);
+    const searchParams = useSearchParams();
+    const autoDeployParam = searchParams.get("autoDeploy");
     const [project, setProject] = useState<Project | null>(null);
     const [logs, setLogs] = useState<string[]>([]);
     const [loading] = useState(false);
@@ -45,6 +48,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
 
     const pollingRef = useRef<NodeJS.Timeout | undefined>(undefined);
     const logContainerRef = useRef<HTMLElement>(null);
+    const autoDeployTriggeredRef = useRef(false);
 
     const fetchProject = useCallback(async () => {
         try {
@@ -80,6 +84,22 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
     useEffect(() => {
         fetchProject();
     }, [fetchProject]);
+
+    // If we arrive from landing page with ?autoDeploy=1, automatically start a deployment
+    useEffect(() => {
+        if (
+            autoDeployParam === "1" &&
+            project &&
+            !deploymentId &&
+            !deploying &&
+            !deploymentFinished &&
+            !autoDeployTriggeredRef.current
+        ) {
+            autoDeployTriggeredRef.current = true;
+            // Fire and forget; any errors are already handled inside handleDeploy
+            void handleDeploy();
+        }
+    }, [autoDeployParam, project, deploymentId, deploying, deploymentFinished]);
 
     const pollDeploymentLogs = useCallback(async (depId: string) => {
         try {

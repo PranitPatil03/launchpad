@@ -35,7 +35,6 @@ export default function Home() {
 
     try {
       setLoading(true);
-
       const uploadServiceUrl = process.env.NEXT_PUBLIC_UPLOAD_SERVICE_URL || 'http://localhost:3000';
 
       // 1. Create Project
@@ -47,17 +46,11 @@ export default function Home() {
       if (projectData?.data?.project?.id) {
         const projectId = projectData.data.project.id;
 
-        // 2. Trigger Initial Deployment
-        // We do this here so the user lands on the project page with a deployment already queued
-        await axios.post(`${uploadServiceUrl}/deploy`, {
-          projectId: projectId,
-        });
-
         // Save to local history immediately
         saveProject(projectId, repoURL);
 
-        // 3. Redirect to Project Dashboard
-        router.push(`/project/${projectId}`);
+        // 2. Redirect to Project Dashboard and let that page start deployment & logs
+        router.push(`/project/${projectId}?autoDeploy=1`);
       }
     } catch (error) {
       console.error("Error creating project:", error);
