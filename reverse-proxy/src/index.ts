@@ -31,17 +31,17 @@ app.use(express.json());
 // Health check endpoint (MUST be before catch-all routes)
 app.get('/health', (req, res) => {
     console.log('Health check request received');
-    res.json({ 
-        status: 'ok', 
-        service: 'reverse-proxy', 
+    res.json({
+        status: 'ok',
+        service: 'reverse-proxy',
         port,
-        timestamp: new Date().toISOString() 
+        timestamp: new Date().toISOString()
     });
 });
 
 // Root endpoint
 app.get('/', (req, res) => {
-    res.json({ 
+    res.json({
         status: 'ok',
         service: 'reverse-proxy',
         message: 'Reverse proxy service is running',
@@ -52,13 +52,57 @@ app.get('/', (req, res) => {
     });
 });
 
+// Cache to store subdomain -> projectId mapping to avoid DB hits for every asset
+const projectCache = new Map<string, string>();
+
+// Middleware to handle assets (/_next, /static, /favicon.ico, etc)
+// that are requested from inside a preview page
+app.use(async (req, res, next) => {
+    const hostname = req.hostname;
+    const subdomain = hostname.split('.')[0];
+
+    // If request is NOT for a specific preview route AND NOT a custom domain
+    // We try to figure out the project from the Referer
+    if (!req.path.startsWith('/preview/') && !req.path.startsWith('/health') && req.path !== '/') {
+        const referer = req.headers.referer;
+        if (referer) {
+            try {
+                const refererUrl = new URL(referer);
+                const pathParts = refererUrl.pathname.split('/');
+                // Check if referer is /preview/SUBDOMAIN
+                if (pathParts[1] === 'preview' && pathParts[2]) {
+                    const subDomain = pathParts[2];
+
+                    let projectId = projectCache.get(subDomain);
+                    if (!projectId) {
+                        const projects = await prisma.project.findMany({ where: { subDomain } });
+                        if (projects.length > 0) {
+                            projectId = projects[0].id;
+                            projectCache.set(subDomain, projectId);
+                        }
+                    }
+
+                    if (projectId && BASE_URL) {
+                        const target = `${BASE_URL}${projectId}`;
+                        console.log(`📦 Asset proxy: ${req.url} -> ${target}${req.url} (Referer: ${subDomain})`);
+                        return proxy.web(req, res, { target, changeOrigin: true });
+                    }
+                }
+            } catch (e) {
+                // Ignore parsing errors
+            }
+        }
+    }
+    next();
+});
+
 // Path-based preview (no custom domain needed): /preview/:subDomain and /preview/:subDomain/*
 // Example: https://your-reverse-proxy.up.railway.app/preview/abundant-old-father
 app.use('/preview/:subDomain', async (req, res) => {
     try {
         const subDomain = req.params.subDomain;
         console.log('📱 Preview request for subdomain:', subDomain, 'path:', req.url);
-        
+
         if (!subDomain) {
             console.warn('⚠️  No subdomain provided');
             return res.status(400).json({ error: 'Subdomain required' });
@@ -88,7 +132,7 @@ app.use(async (req, res) => {
     try {
         const hostname = req.hostname;
         console.log('🌐 Incoming request - hostname:', hostname, 'path:', req.url);
-        
+
         const subdomain = hostname.split('.')[0];
         console.log('📋 Extracted subdomain:', subdomain);
 
