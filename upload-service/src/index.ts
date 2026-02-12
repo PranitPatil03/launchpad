@@ -209,6 +209,25 @@ app.post('/project', async (req, res) => {
     }
 });
 
+app.get('/project/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const project = await prisma.project.findUnique({
+            where: { id },
+            include: { Deployement: { orderBy: { createdAt: 'desc' }, take: 5 } }
+        });
+
+        if (!project) {
+            return res.status(404).json({ error: 'Project not found' });
+        }
+
+        return res.json({ status: 'success', data: { project } });
+    } catch (error) {
+        console.error('Error fetching project:', error);
+        return res.status(500).json({ error: 'Failed to fetch project' });
+    }
+});
+
 app.post('/deploy', async (req, res) => {
     try {
         const { projectId } = req.body;

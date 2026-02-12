@@ -1,240 +1,155 @@
 "use client";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Github } from 'lucide-react';
-import { Fira_Code } from 'next/font/google';
+import { Github, ArrowRight, Sparkles } from 'lucide-react';
 import axios from "axios";
-
-const firaCode = Fira_Code({ subsets: ["latin"] });
+import { Navbar } from "@/components/navbar";
+import { LaunchpadBackground } from "@/components/launchpad-background";
+import { saveProject, getSavedProjects, type SavedProject } from "@/lib/project-storage";
+import Link from 'next/link';
+import { useEffect } from 'react';
+import { ExternalLink, Trash2 } from 'lucide-react';
 
 export default function Home() {
+  const router = useRouter();
   const [repoURL, setURL] = useState<string>("");
-  const [logs, setLogs] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
-  const [projectId, setProjectId] = useState<string | undefined>();
-  const [deployId, setDeploymentId] = useState<string | undefined>();
-  const [deployPreviewURL, setDeployPreviewURL] = useState<string | undefined>();
-  const [deploymentFinished, setDeploymentFinished] = useState(false); // New state to track completion
+  const [recentProjects, setRecentProjects] = useState<SavedProject[]>([]);
 
-  const pollingRef = useRef<NodeJS.Timeout | undefined>(undefined);
-  const logContainerRef = useRef<HTMLElement>(null);
-
-  const isValidURL: [boolean, string | null] = useMemo(() => {
-    if (!repoURL || repoURL.trim() === "") return [false, null];
-    const regex = new RegExp(
-      /^(?:https?:\/\/)?(?:www\.)?github\.com\/([^\/]+)\/([^\/]+)(?:\/)?$/
-    );
-    return [regex.test(repoURL), "Enter valid Github Repository URL"];
-  }, [repoURL]);
-
-  interface LogEntry {
-    event_id: string;
-    deployment_id: string;
-    log: string;
-    timestamp: string;
-  }
-
-  interface DeploymentLogs {
-    logs: LogEntry[];
-  }
-
-  const pollDeploymentLogs = useCallback(async (id: string) => {
-    try {
-      const uploadServiceUrl = process.env.NEXT_PUBLIC_UPLOAD_SERVICE_URL || '';
-      const { data } = await axios.get(`${uploadServiceUrl}/logs/${id}`);
-
-      if (data && data.logs) {
-        const newLogs: string[] = (data as DeploymentLogs).logs.map((log: LogEntry): string => log.log);
-        setLogs(newLogs);
-
-        // Check if deployment is complete
-        const isComplete = newLogs.some((log: string) => log === "Service uploaded");
-        if (isComplete) {
-          // Stop polling
-          if (pollingRef.current) clearInterval(pollingRef.current);
-          setLoading(false);
-          setDeploymentFinished(true); // Show the URL now
-        }
-      }
-    } catch (error) {
-      console.error("Error polling logs:", error);
-    }
+  useEffect(() => {
+    // Load recent projects only on client mount
+    setRecentProjects(getSavedProjects());
   }, []);
 
-  const handleClickDeploy = useCallback(async () => {
+  const isValidURL = (url: string) => {
+    if (!url || url.trim() === "") return false;
+    const regex = /^(?:https?:\/\/)?(?:www\.)?github\.com\/([^\/]+)\/([^\/]+)(?:\/)?$/;
+    return regex.test(url);
+  };
+
+  const handleClickDeploy = async () => {
+    if (!isValidURL(repoURL)) return;
+
     try {
       setLoading(true);
-      setLogs([]);
-      setDeploymentFinished(false);
-      setDeployPreviewURL(undefined);
 
-      // Create project
-      const uploadServiceUrl = process.env.NEXT_PUBLIC_UPLOAD_SERVICE_URL || '';
-      const previewBaseUrl = process.env.NEXT_PUBLIC_PREVIEW_BASE_URL || '';
+      const uploadServiceUrl = process.env.NEXT_PUBLIC_UPLOAD_SERVICE_URL || 'http://localhost:3000';
 
+      // 1. Create Project
       const { data: projectData } = await axios.post(`${uploadServiceUrl}/project`, {
         gitURL: repoURL,
-        name: "",
+        name: "", // Optional: could ask user for name or slug
       });
 
-      if (projectData?.data?.project) {
-        const { id, subDomain } = projectData.data.project;
-        setProjectId(id);
+      if (projectData?.data?.project?.id) {
+        const projectId = projectData.data.project.id;
 
-        // Construct URL but don't show it yet
-        const base = previewBaseUrl.replace(/\/$/, '');
-        const previewUrl = base.includes('*')
-          ? base.replace('*', subDomain)
-          : `${base}/preview/${subDomain}`;
-
-        setDeployPreviewURL(previewUrl);
-
-        // Start deployment
-        const { data: deployData } = await axios.post(`${uploadServiceUrl}/deploy`, {
-          projectId: id,
+        // 2. Trigger Initial Deployment
+        // We do this here so the user lands on the project page with a deployment already queued
+        await axios.post(`${uploadServiceUrl}/deploy`, {
+          projectId: projectId,
         });
 
-        if (deployData?.data?.deploymentId) {
-          setDeploymentId(deployData.data.deploymentId);
+        // Save to local history immediately
+        saveProject(projectId, repoURL);
 
-          // Start polling logs
-          pollingRef.current = setInterval(() => {
-            pollDeploymentLogs(deployData.data.deploymentId);
-          }, 2000);
-        }
+        // 3. Redirect to Project Dashboard
+        router.push(`/project/${projectId}`);
       }
     } catch (error) {
-      console.error("Error deploying:", error);
+      console.error("Error creating project:", error);
+      // Maybe show toast?
+    } finally {
       setLoading(false);
     }
-  }, [repoURL, pollDeploymentLogs]);
-
-  // Cleanup polling on unmount
-  useEffect(() => {
-    return () => {
-      if (pollingRef.current) {
-        clearInterval(pollingRef.current);
-      }
-    };
-  }, []);
-
-  // Auto scroll logs
-  useEffect(() => {
-    if (logs.length > 0) {
-      logContainerRef.current?.scrollIntoView({ behavior: "smooth" });
-    }
-  }, [logs]);
+  };
 
   return (
-    <main className="flex justify-center items-center min-h-screen bg-slate-950 text-slate-100 p-4 font-sans">
-      <div className="w-full max-w-3xl">
+    <div className="relative min-h-screen bg-black text-white selection:bg-neutral-700 overflow-hidden font-sans">
+      <LaunchpadBackground />
+      <Navbar />
 
-        {/* Header Section */}
-        <div className="flex items-center gap-4 mb-8">
-          <div className="p-3 bg-slate-900 rounded-xl border border-slate-800 shadow-xl">
-            <Github className="text-4xl text-white" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">
-              Vercel Clone
-            </h1>
-            <p className="text-slate-400 text-sm">Deploy your Github repositories instantly</p>
-          </div>
-        </div>
+      <main className="relative z-10 flex flex-col items-center justify-center min-h-screen px-4 pt-20 pb-12">
 
-        {/* Input Section */}
-        <div className="bg-slate-900/50 backdrop-blur-md rounded-2xl p-6 border border-slate-800 shadow-2xl">
-          <div className="flex flex-col gap-4">
+        {/* Hero Section */}
+        <div className="w-full max-w-4xl mx-auto text-center space-y-8 animate-in fade-in zoom-in-95 duration-700 slide-in-from-bottom-8">
+
+          <h1 className="text-5xl md:text-7xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-b from-white via-white/90 to-white/50 pb-2">
+            Ship fast. <br className="hidden md:block" />
+            Preview instantly.
+          </h1>
+
+          <p className="text-lg md:text-xl text-neutral-400 max-w-2xl mx-auto leading-relaxed">
+            One-click deployment platform with real-time logs, automated scaling, and instant preview environments for everyone.
+          </p>
+
+          {/* Input Area */}
+          <div className="w-full max-w-xl mx-auto mt-12 flex flex-col sm:flex-row gap-3">
             <Input
-              disabled={loading}
+              className="flex-1 bg-neutral-950 border-neutral-800 text-white placeholder:text-neutral-500 h-14 text-base rounded-xl focus-visible:ring-2 focus-visible:ring-neutral-700 focus-visible:ring-offset-0 focus-visible:border-transparent pl-5 shadow-lg shadow-black/20"
+              placeholder="github.com/username/project"
               value={repoURL}
               onChange={(e) => setURL(e.target.value)}
-              type="url"
-              placeholder="https://github.com/username/repo"
-              className="bg-slate-950 border-slate-700 text-slate-100 placeholder:text-slate-600 focus:ring-2 focus:ring-blue-500/50 h-12 text-lg"
+              disabled={loading}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && isValidURL(repoURL)) {
+                  handleClickDeploy();
+                }
+              }}
             />
             <Button
               onClick={handleClickDeploy}
-              disabled={!isValidURL[0] || loading}
-              className={`w-full h-12 text-lg font-medium transition-all duration-300 ${loading
-                  ? 'bg-slate-800 text-slate-400 cursor-not-allowed'
-                  : 'bg-white text-black hover:bg-slate-200 shadow-[0_0_20px_-5px_rgba(255,255,255,0.3)]'
-                }`}
+              disabled={!isValidURL(repoURL) || loading}
+              size="lg"
+              className="bg-white text-black hover:bg-neutral-200 font-medium px-8 h-14 rounded-xl transition-all shadow-[0_0_20px_-5px_rgba(255,255,255,0.15)] hover:shadow-[0_0_25px_-5px_rgba(255,255,255,0.3)] shrink-0 text-base disabled:opacity-100 disabled:pointer-events-auto disabled:cursor-not-allowed"
             >
               {loading ? (
-                <span className="flex items-center gap-2">
-                  <span className="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
-                  Deploying...
-                </span>
+                <div className="w-5 h-5 border-2 border-neutral-600 border-t-transparent rounded-full animate-spin" />
               ) : (
-                "Deploy Now"
+                "Deploy"
               )}
             </Button>
           </div>
-        </div>
 
-        {/* Success / Preview Section */}
-        {deploymentFinished && deployPreviewURL && (
-          <div className="mt-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="bg-emerald-950/30 border border-emerald-500/30 rounded-xl p-4 flex items-center justify-between gap-4">
-              <div>
-                <h3 className="text-emerald-400 font-semibold mb-1">Deployment Complete! 🚀</h3>
-                <p className="text-emerald-200/60 text-sm">Your project is live and ready to view.</p>
-              </div>
-              <a
-                target="_blank"
-                href={deployPreviewURL}
-                className="px-6 py-2 bg-emerald-500 hover:bg-emerald-400 text-black font-semibold rounded-lg transition-colors shadow-lg shadow-emerald-500/20 whitespace-nowrap"
-              >
-                Visit Site
-              </a>
-            </div>
-            <div className="mt-2 text-center text-xs text-slate-600 break-all font-mono selection:bg-emerald-500/30">
-              {deployPreviewURL}
-            </div>
-          </div>
-        )}
-
-        {/* Logs Console */}
-        {logs.length > 0 && (
-          <div className="mt-8 rounded-xl overflow-hidden border border-slate-800 bg-[#0c0c0c] shadow-2xl">
-            <div className="flex items-center gap-2 px-4 py-2 bg-slate-900/50 border-b border-slate-800">
-              <div className="w-3 h-3 rounded-full bg-red-500/50" />
-              <div className="w-3 h-3 rounded-full bg-yellow-500/50" />
-              <div className="w-3 h-3 rounded-full bg-green-500/50" />
-              <span className="ml-2 text-xs text-slate-500 font-mono">build-logs.txt</span>
-            </div>
-            <div
-              className={`${firaCode.className} text-xs md:text-sm p-4 h-[400px] overflow-y-auto scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent`}
-            >
-              <pre className="flex flex-col gap-1.5 font-mono">
-                {logs.map((log, i) => (
-                  <div key={i} className="flex gap-3 text-slate-300">
-                    <span className="text-slate-600 shrink-0">›</span>
-                    <span
-                      ref={logs.length - 1 === i ? logContainerRef : undefined}
-                      className={`${log.toLowerCase().includes('error') ? 'text-red-400' :
-                          log.toLowerCase().includes('success') || log.includes('Complete') ? 'text-emerald-400' :
-                            log.includes('http') ? 'text-blue-400' : 'text-slate-300'
-                        }`}
-                    >
-                      {log}
-                    </span>
-                  </div>
+          {recentProjects.length > 0 && (
+            <div className="w-full mt-24 animate-in fade-in slide-in-from-bottom-12 duration-1000 delay-300 text-left">
+              <h2 className="text-2xl font-semibold mb-6 text-neutral-200 flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-yellow-500" />
+                Your Recent Deployments
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {recentProjects.slice(0, 4).map((project) => (
+                  <Link
+                    key={project.id}
+                    href={`/project/${project.id}`}
+                    className="group block p-5 rounded-2xl bg-neutral-900/50 border border-neutral-800 hover:border-neutral-700 hover:bg-neutral-900 transition-all duration-300 backdrop-blur-sm"
+                  >
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="flex items-center gap-2 text-neutral-100 font-medium truncate pr-4">
+                        <Github className="w-4 h-4 text-neutral-400" />
+                        <span className="truncate max-w-[200px]">{project.url.replace('https://github.com/', '')}</span>
+                      </div>
+                      <ExternalLink className="w-4 h-4 text-neutral-500 group-hover:text-white transition-colors" />
+                    </div>
+                    <div className="flex items-center justify-between text-xs text-neutral-500 mt-4">
+                      <span>{new Date(project.createdAt).toLocaleDateString()}</span>
+                      <span className="bg-green-500/10 text-green-500 px-2 py-0.5 rounded-full border border-green-500/20">Active</span>
+                    </div>
+                  </Link>
                 ))}
-              </pre>
-              {loading && (
-                <div className="flex gap-2 items-center mt-2 text-slate-500 animate-pulse">
-                  <span className="w-1.5 h-4 bg-slate-500" />
-                </div>
+              </div>
+              {recentProjects.length > 4 && (
+                <p className="text-center text-neutral-500 text-sm mt-6">
+                  Showing most recent 4 of {recentProjects.length} projects
+                </p>
               )}
             </div>
-          </div>
-        )}
-
-      </div>
-    </main>
+          )}
+        </div>
+      </main>
+    </div>
   );
 }
-

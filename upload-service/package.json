@@ -30,7 +30,7 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
-    "@types/node": "^22.10.7",
+    "@types/node": "^22.19.11",
     "prisma": "^6.2.1",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3"
