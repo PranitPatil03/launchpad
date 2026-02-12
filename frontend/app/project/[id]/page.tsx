@@ -102,6 +102,12 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
     }, [autoDeployParam, project, deploymentId, deploying, deploymentFinished]);
 
     const pollDeploymentLogs = useCallback(async (depId: string) => {
+        // If deployment is already marked finished, stop polling
+        if (deploymentFinished) {
+            if (pollingRef.current) clearInterval(pollingRef.current);
+            return;
+        }
+
         try {
             const uploadServiceUrl = process.env.NEXT_PUBLIC_UPLOAD_SERVICE_URL || 'http://localhost:3000';
             const { data } = await axios.get(`${uploadServiceUrl}/logs/${depId}`);
@@ -110,22 +116,29 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
                 const newLogs: string[] = (data as DeploymentLogs).logs.map((log: LogEntry): string => log.log);
                 setLogs(newLogs);
 
-                const isComplete = newLogs.some((log: string) => log.includes("Service uploaded") || log.includes("Build Complete"));
-                // Note: The original code checked for "Service uploaded".
-                if (isComplete) {
+                const isComplete = newLogs.some((log: string) =>
+                    log.includes("Service uploaded") ||
+                    log.includes("Build Complete") ||
+                    log.toLowerCase().includes("preview url")
+                );
+
+                // Also refresh project status while we're polling so we can stop
+                await fetchProject();
+
+                // If logs or project status indicate completion, stop polling
+                if (isComplete || deploymentFinished) {
                     if (pollingRef.current) clearInterval(pollingRef.current);
                     setDeploying(false);
                     setDeploymentFinished(true);
-                    fetchProject(); // Refresh status
                 }
             }
         } catch (error) {
             console.error("Error polling logs:", error);
         }
-    }, [fetchProject]);
+    }, [fetchProject, deploymentFinished]);
 
     useEffect(() => {
-        if (deploymentId && deploying) {
+        if (deploymentId && deploying && !deploymentFinished) {
             pollingRef.current = setInterval(() => {
                 pollDeploymentLogs(deploymentId);
             }, 2000);
@@ -133,14 +146,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
         return () => {
             if (pollingRef.current) clearInterval(pollingRef.current);
         };
-    }, [deploymentId, deploying, pollDeploymentLogs]);
-
-    // Auto scroll logs
-    useEffect(() => {
-        if (logs.length > 0) {
-            logContainerRef.current?.scrollIntoView({ behavior: "smooth" });
-        }
-    }, [logs]);
+    }, [deploymentId, deploying, deploymentFinished, pollDeploymentLogs]);
 
     const handleDeploy = async () => {
         if (!project) return;
@@ -234,8 +240,8 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
                         {/* Main Content: Preview & Logs */}
                         <div className="lg:col-span-2 space-y-6">
                             {/* Preview URL Card */}
-                            <div className="rounded-xl border border-white/10 bg-neutral-900/50 overflow-hidden">
-                                <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between bg-neutral-900">
+                            <div className="rounded-xl border border-white/20 bg-neutral-900/50 overflow-hidden">
+                                <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between bg-neutral-900/80 backdrop-blur-sm">
                                     <h3 className="text-sm font-medium flex items-center gap-2">
                                         <Globe className="w-4 h-4 text-neutral-400" />
                                         Deployment Preview
@@ -244,14 +250,35 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
                                         <span className="text-xs text-emerald-400">Ready</span>
                                     )}
                                 </div>
-                                <div className="p-6 flex flex-col items-center justify-center text-center gap-4 min-h-[200px] text-neutral-400">
+                                <div className="p-6 flex flex-col items-center justify-center text-center gap-4 min-h-[260px] text-neutral-400">
                                     {deploymentFinished ? (
-                                        <div className="space-y-4">
-                                            <p className="text-lg text-white">Your app is live!</p>
-                                            <a href={previewUrl} target="_blank" className="text-blue-400 hover:underline break-all">
-                                                {previewUrl}
-                                            </a>
-                                        </div>
+                                        <>
+                                            <div className="space-y-3 w-full">
+                                                <p className="text-lg text-white">Your app is live!</p>
+                                                <a
+                                                    href={previewUrl}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="inline-flex items-center justify-center gap-2 text-blue-400 hover:text-blue-300 hover:underline break-all text-sm"
+                                                >
+                                                    <ExternalLink className="w-4 h-4" />
+                                                    {previewUrl}
+                                                </a>
+                                            </div>
+                                            <div className="mt-4 w-full max-w-3xl rounded-lg border border-white/10 overflow-hidden bg-black/60">
+                                                <div className="flex items-center justify-between px-3 py-2 border-b border-white/10 text-xs text-neutral-500">
+                                                    <span>Live Preview</span>
+                                                    <span>Click inside to interact, or use the link above.</span>
+                                                </div>
+                                                <div className="relative w-full aspect-video bg-black">
+                                                    <iframe
+                                                        src={previewUrl}
+                                                        className="w-full h-full border-0"
+                                                        loading="lazy"
+                                                    />
+                                                </div>
+                                            </div>
+                                        </>
                                     ) : deploying ? (
                                         <div className="flex flex-col items-center gap-2">
                                             <div className="w-8 h-8 border-2 border-white/20 border-t-white rounded-full animate-spin" />
@@ -264,8 +291,8 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
                             </div>
 
                             {/* Logs */}
-                            <div className="rounded-xl border border-white/10 bg-[#0c0c0c] overflow-hidden shadow-2xl">
-                                <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between bg-neutral-900/50">
+                            <div className="rounded-xl border border-white/20 bg-[#0c0c0c] overflow-hidden shadow-2xl h-[500px] flex flex-col">
+                                <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between bg-neutral-900/70 backdrop-blur-sm">
                                     <h3 className="text-sm font-medium flex items-center gap-2 text-neutral-300">
                                         <Terminal className="w-4 h-4" />
                                         Build Logs
@@ -277,7 +304,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
                                         </span>
                                     )}
                                 </div>
-                                <div className={`p-4 h-[500px] overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-700 ${firaCode.className} text-xs md:text-sm`}>
+                                <div className={`p-4 flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-700 ${firaCode.className} text-xs md:text-sm`}>
                                     {logs.length === 0 ? (
                                         <div className="h-full flex items-center justify-center text-neutral-600 font-mono">
                                             {deploying ? "Waiting for logs..." : "No logs to display"}
