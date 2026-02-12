@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, use } from "react";
+import { useCallback, useEffect, useRef, useState, use } from "react";
 import axios from "axios";
 import { Button } from "@/components/ui/button";
 import { FolderGit2, Globe, Terminal, RefreshCw, ExternalLink } from "lucide-react";
@@ -26,6 +26,7 @@ interface Project {
     gitURL: string;
     subDomain: string;
     customDomain?: string | null;
+    updatedAt?: string;
     Deployement?: Array<{
         id: string;
         status: string;
@@ -37,7 +38,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
     const { id } = use(params);
     const [project, setProject] = useState<Project | null>(null);
     const [logs, setLogs] = useState<string[]>([]);
-    const [loading, setLoading] = useState(false);
+    const [loading] = useState(false);
     const [deploying, setDeploying] = useState(false);
     const [deploymentId, setDeploymentId] = useState<string | undefined>();
     const [deploymentFinished, setDeploymentFinished] = useState(false);
@@ -267,8 +268,8 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
                                                 <div key={i} className="flex gap-3 text-neutral-300">
                                                     <span className="text-neutral-600 shrink-0 select-none">›</span>
                                                     <span ref={logs.length - 1 === i ? logContainerRef : undefined} className={`${log.toLowerCase().includes('error') ? 'text-red-400' :
-                                                            log.toLowerCase().includes('success') || log.includes('Complete') ? 'text-emerald-400' :
-                                                                log.includes('http') ? 'text-blue-400' : 'text-neutral-300'
+                                                        log.toLowerCase().includes('success') || log.includes('Complete') ? 'text-emerald-400' :
+                                                            log.includes('http') ? 'text-blue-400' : 'text-neutral-300'
                                                         }`}>
                                                         {log}
                                                     </span>

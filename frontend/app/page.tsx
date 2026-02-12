@@ -4,14 +4,14 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Github, ArrowRight, Sparkles } from 'lucide-react';
+import { Github, Sparkles } from 'lucide-react';
 import axios from "axios";
 import { Navbar } from "@/components/navbar";
 import { LaunchpadBackground } from "@/components/launchpad-background";
 import { saveProject, getSavedProjects, type SavedProject } from "@/lib/project-storage";
 import Link from 'next/link';
 import { useEffect } from 'react';
-import { ExternalLink, Trash2 } from 'lucide-react';
+import { ExternalLink } from 'lucide-react';
 
 export default function Home() {
   const router = useRouter();
