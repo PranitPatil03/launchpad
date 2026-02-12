@@ -21,7 +21,7 @@ const formatCert = (cert) => {
 }
 
 // Prepare SSL config
-const sslConfig = { rejectUnauthorized: true };
+const sslConfig = { rejectUnauthorized: false }; // Allow self-signed certs
 if (process.env.KAFKA_CA_CERT) {
     sslConfig.ca = [formatCert(process.env.KAFKA_CA_CERT)];
 }
